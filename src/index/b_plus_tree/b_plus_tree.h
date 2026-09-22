@@ -47,6 +47,7 @@ private:
     );
 
     void splitLeaf(
+        PageId leaf_id,
         LeafPage& leaf,
         std::vector<PageId>& path
     );

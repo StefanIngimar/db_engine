@@ -63,7 +63,7 @@ bool BPlusTree::insert(
     }
 
     if (leaf->isFull()) {
-        splitLeaf(*leaf, path);
+        splitLeaf(leaf_id, *leaf, path);
     }
 
     return true;
@@ -253,8 +253,91 @@ PageId BPlusTree::findLeaf(
 }
 
 void BPlusTree::splitLeaf(
+    PageId leaf_id,
     LeafPage& leaf,
     std::vector<PageId>& path
 ) {
-    // TODO: implement leaf splitting
+    // leaf currently holds MAX_ENTRIES + 1 records -- isFull() only fires
+    // after the insert that pushed it one over the limit.
+    auto new_leaf_owner = std::make_unique<LeafPage>(0);
+    PageId new_leaf_id = buffer_manager_.newPage(std::move(new_leaf_owner));
+    auto* new_leaf =
+        static_cast<LeafPage*>(buffer_manager_.fetchPage(new_leaf_id));
+
+    auto& left_records = leaf.records();
+    auto& right_records = new_leaf->records();
+
+    std::size_t split_point = left_records.size() / 2;
+
+    right_records.assign(
+        left_records.begin() + static_cast<long>(split_point),
+        left_records.end()
+    );
+    left_records.erase(
+        left_records.begin() + static_cast<long>(split_point),
+        left_records.end()
+    );
+
+    // Keep the leaf chain (used for range scans) intact.
+    new_leaf->setNextPage(leaf.nextPage());
+    leaf.setNextPage(new_leaf_id);
+
+    // The smallest key that moved right becomes the separator: any search
+    // key >= this value routes to the new leaf (see InternalPage::findChild).
+    Key separator_key = right_records.front().key;
+
+    if (path.empty()) {
+        // leaf was the root it needs a new parent.
+        createNewRoot(leaf_id, new_leaf_id, separator_key);
+        return;
+    }
+
+    PageId parent_id = path.back();
+    auto* parent =
+        static_cast<InternalPage*>(buffer_manager_.fetchPage(parent_id));
+
+    parent->insertChild(separator_key, new_leaf_id);
+
+    if (parent->isFull()) {
+        path.pop_back();
+        splitInternal(*parent, path);
+    }
+}
+
+void BPlusTree::createNewRoot(
+    PageId left,
+    PageId right,
+    Key separator
+) {
+    auto new_root_owner = std::make_unique<InternalPage>(0);
+    PageId new_root_id = buffer_manager_.newPage(std::move(new_root_owner));
+    auto* new_root =
+        static_cast<InternalPage*>(buffer_manager_.fetchPage(new_root_id));
+
+    new_root->setRootPage(true);
+    new_root->keys().push_back(separator);
+    new_root->children().push_back(left);
+    new_root->children().push_back(right);
+
+    auto* old_root =
+        static_cast<BPlusTreePage*>(buffer_manager_.fetchPage(left));
+    old_root->setRootPage(false);
+
+    root_page_id_ = new_root_id;
+}
+
+void BPlusTree::splitInternal(
+    InternalPage& internal,
+    std::vector<PageId>& path
+) {
+    // TODO: mirrors splitLeaf, with one key difference -- an internal split
+    // *promotes* the middle key into the parent rather than copying it (the
+    // middle key doesn't belong fully to either half, since keys_[i] sits
+    // between children_[i] and children_[i+1]). Split children_ 50/50 so
+    // each half has one more child than keys, then insertChild the promoted
+    // key + new page into the grandparent (or createNewRoot if path is empty).
+    //
+    // Needed as soon as a root leaf split's parent (the new root) itself
+    // fills up -- with MAX_KEYS = 4 that's reachable in a small test, so
+    // this is the next thing to build, not an edge case you can defer long.
 }

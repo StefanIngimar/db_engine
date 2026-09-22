@@ -68,6 +68,16 @@ bool LeafPage::isFull() const {
     return records_.size() > MAX_ENTRIES;
 }
 
+bool LeafPage::isUnderflow() const{
+    std::size_t min_entries = (MAX_ENTRIES + 1) / 2;
+    return records_.size() < min_entries;
+}
+
+bool LeafPage::canLend() const{
+    std::size_t min_entries = (MAX_ENTRIES + 1) / 2;
+    return records_.size() > min_entries;
+}
+
 size_t LeafPage::size() const {
     return records_.size();
 }
