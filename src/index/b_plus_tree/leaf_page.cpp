@@ -78,6 +78,43 @@ bool LeafPage::canLend() const{
     return records_.size() > min_entries;
 }
 
+void LeafPage::removeAt(int index){
+    records_.erase(records_.begin() + index);
+}
+
+Key LeafPage::redistributeFrom(LeafPage* sibling, bool sibling_is_left) {
+
+    auto& sibling_records = sibling->records();
+
+    if (sibling_is_left) {
+        // Move the sibling's largest record to the front of this node.
+        Record borrowed = sibling_records.back();
+        sibling_records.pop_back();
+        records_.insert(records_.begin(), borrowed);
+
+        // This node is now the "right" side of the pair; its new smallest
+        // key is the separator between sibling (left) and this node.
+        return records_.front().key;
+    }
+
+    // Move the sibling's smallest record to the end of this node.
+    Record borrowed = sibling_records.front();
+    sibling_records.erase(sibling_records.begin());
+    records_.push_back(borrowed);
+
+    // sibling is now the "right" side; its new smallest key is the
+    // separator between this node (left) and sibling.
+    return sibling_records.front().key;
+}
+
+void LeafPage::mergeFrom(LeafPage* sibling) {
+    // Assumes sibling is the node to this one's right (see BPlusTree::
+    // fixUnderflow, which always merges right into left).
+    auto& sibling_records = sibling->records();
+    records_.insert(records_.end(), sibling_records.begin(), sibling_records.end());
+    sibling_records.clear();
+}
+
 size_t LeafPage::size() const {
     return records_.size();
 }

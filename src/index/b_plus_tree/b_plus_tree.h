@@ -53,6 +53,7 @@ private:
     );
 
     void splitInternal(
+        PageId internal_id,
         InternalPage& internal,
         std::vector<PageId>& path
     );

@@ -300,7 +300,7 @@ void BPlusTree::splitLeaf(
 
     if (parent->isFull()) {
         path.pop_back();
-        splitInternal(*parent, path);
+        splitInternal(parent_id, *parent, path);
     }
 }
 
@@ -327,17 +327,52 @@ void BPlusTree::createNewRoot(
 }
 
 void BPlusTree::splitInternal(
+    PageId internal_id,
     InternalPage& internal,
     std::vector<PageId>& path
 ) {
-    // TODO: mirrors splitLeaf, with one key difference -- an internal split
-    // *promotes* the middle key into the parent rather than copying it (the
-    // middle key doesn't belong fully to either half, since keys_[i] sits
-    // between children_[i] and children_[i+1]). Split children_ 50/50 so
-    // each half has one more child than keys, then insertChild the promoted
-    // key + new page into the grandparent (or createNewRoot if path is empty).
-    //
-    // Needed as soon as a root leaf split's parent (the new root) itself
-    // fills up -- with MAX_KEYS = 4 that's reachable in a small test, so
-    // this is the next thing to build, not an edge case you can defer long.
+    // internal currently holds MAX_KEYS + 1 keys / MAX_KEYS + 2 children --
+    // isFull() only fires right after the insertChild that overflowed it.
+    auto& keys = internal.keys();
+    auto& children = internal.children();
+
+    std::size_t mid = keys.size() / 2;
+    Key promoted_key = keys[mid];
+
+    auto new_internal_owner = std::make_unique<InternalPage>(0);
+    PageId new_internal_id = buffer_manager_.newPage(std::move(new_internal_owner));
+    auto* new_internal =
+        static_cast<InternalPage*>(buffer_manager_.fetchPage(new_internal_id));
+
+    // Everything right of the promoted key goes to the new node.
+    new_internal->keys().assign(
+        keys.begin() + static_cast<long>(mid) + 1,
+        keys.end()
+    );
+    new_internal->children().assign(
+        children.begin() + static_cast<long>(mid) + 1,
+        children.end()
+    );
+
+    // The promoted key moves up it isn't copied, so it's dropped from
+    // both sides here.
+    keys.erase(keys.begin() + static_cast<long>(mid), keys.end());
+    children.erase(children.begin() + static_cast<long>(mid) + 1, children.end());
+
+    if (path.empty()) {
+        // internal was the root it needs a new parent.
+        createNewRoot(internal_id, new_internal_id, promoted_key);
+        return;
+    }
+
+    PageId parent_id = path.back();
+    auto* parent =
+        static_cast<InternalPage*>(buffer_manager_.fetchPage(parent_id));
+
+    parent->insertChild(promoted_key, new_internal_id);
+
+    if (parent->isFull()) {
+        path.pop_back();
+        splitInternal(parent_id, *parent, path);
+    }
 }

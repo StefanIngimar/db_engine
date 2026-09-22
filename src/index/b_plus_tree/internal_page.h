@@ -36,7 +36,7 @@ public:
 
     bool canLend() const;
 
-    Key redistributeFrom(InternalPage* sibling, bool sibling_is_left, uint32_t parent_separator_key);
+    Key redistributeFrom(InternalPage* sibling, bool sibling_is_left, Key parent_separator_key);
 
     void mergeFrom(InternalPage* sibling, Key parent_separator_key);
 
