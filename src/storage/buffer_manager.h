@@ -8,6 +8,13 @@
 class DiskManager;
 class BPlusTreePage;
 
+struct Frame{
+    std::unique_ptr<Page> page;
+
+    size_t pin_count = 0;
+    bool dirty = false;
+};
+
 class BufferManager {
 public:
     explicit BufferManager(DiskManager& disk_manager);
@@ -51,6 +58,6 @@ private:
 
     std::unordered_map<
         PageId,
-        std::unique_ptr<Page>
+        Frame
     > pages_;
 };
