@@ -1,5 +1,6 @@
 #include "b_plus_tree.h"
 
+#include "b_plus_tree_page.h"
 #include "internal_page.h"
 #include "leaf_page.h"
 
@@ -154,4 +155,42 @@ void BPlusTree::splitLeaf(
     std::vector<PageId>& path
 ) {
     // TODO: implement leaf splitting
+}
+
+bool BPlusTree::remove(int32_t key){
+    if(empty()) return false;
+
+    std::vector<page_id_t> path = FindPathToLeaf(key);
+    page_id_t leaf_id = path.back();
+    LeafPage* leaf = fetchLeaf(leaf_id);
+
+    int idx = leaf->findKeyIndex(key);
+    if(idx < 0) return false;
+    leaf->removeAt(idx);
+
+    fixUnderFlow(path, leaf_id);
+    return true;
+}
+
+void BPlusTree::fixUnderflow(std::vector<page_id_t>& path, page_id_t node_id){
+    if(node_id == root_page_id_){
+        collapseRootNodeIfNeeded();
+        return;
+    }
+
+    BPlusTreePage* node = fetchPage(node_id);
+    if(!node->isUnderflow()) return;
+
+    page_id_t parent_id = path[parentIndexOf(path, node_id)];
+    InternalPage* parent = fetchInternal(parent_id);
+    auto[sibling_id, sibling_is_left, separator_idx] = parent->findSiblingOf(node_id);
+    BPlusTreePage* sibling = fetchPage(sibling_id);
+
+    if(sibling->canLendEntry()){
+        node->redistributeFrom(sibling, sibling_is_left);
+        parent->updateSeparatorKey(separator_idx,);
+    } else{
+        mergeSiblings(parent, node, sibling, sibling_is_left, separator_idx);
+        fixUnderflow(path, parent_id);
+    }
 }

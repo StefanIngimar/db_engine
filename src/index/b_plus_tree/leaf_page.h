@@ -35,6 +35,14 @@ public:
 
     void setNextPage(PageId page_id);
 
+    void removeAt(int index);
+
+    bool isUnderflow() const;
+
+    uint32_t redistributeFrom(LeafPage* sibling, bool sibling_is_left);
+
+    void mergeFrom(LeafPage* sibling);
+
 private:
     static constexpr std::size_t MAX_ENTRIES = 4;
 

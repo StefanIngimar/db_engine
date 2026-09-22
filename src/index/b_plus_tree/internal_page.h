@@ -30,6 +30,14 @@ public:
 
     std::vector<PageId>& children();
 
+    void removeAt(int index);
+
+    bool isUnderflow() const;
+
+    uint32_t redistributeFrom(InternalPage* sibling, bool sibling_is_left, uint32_t parent_separator_key);
+
+    void mergeFrom(InternalPage* sibling);
+
 private:
     static constexpr std::size_t MAX_KEYS = 4;
 
