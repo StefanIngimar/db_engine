@@ -61,4 +61,9 @@ private:
         PageId right,
         Key separator
     );
+
+    void fixUnderflow(
+        std::vector<PageId>& path,
+        PageId node_id
+    );
 };

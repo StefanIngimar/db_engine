@@ -39,7 +39,9 @@ public:
 
     bool isUnderflow() const;
 
-    uint32_t redistributeFrom(LeafPage* sibling, bool sibling_is_left);
+    bool canLend() const;
+
+    Key redistributeFrom(LeafPage* sibling, bool sibling_is_left);
 
     void mergeFrom(LeafPage* sibling);
 

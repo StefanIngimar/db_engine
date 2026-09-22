@@ -111,13 +111,115 @@ bool BPlusTree::remove(Key key) {
     PageId leaf_id =
         findLeaf(key, path);
 
-    Page* page =
-        buffer_manager_.fetchPage(leaf_id);
-
     auto* leaf =
-        static_cast<LeafPage*>(page);
+        static_cast<LeafPage*>(buffer_manager_.fetchPage(leaf_id));
 
-    return leaf->remove(key);
+    int idx = -1;
+    const auto& recs = leaf->records();
+    for(std::size_t i = 0; i < recs.size(); ++i){
+        if(recs[i].key == key){
+            idx = static_cast<int>(i);
+            break;
+        }
+    }
+    if(idx < 0){
+        return false;
+    }
+
+    leaf->removeAt(idx);
+    fixUnderflow(path, leaf_id);
+    return true;
+}
+
+void BPlusTree::fixUnderflow(std::vector<PageId>& path, PageId node_id) {
+
+    auto* page =
+        static_cast<BPlusTreePage*>(buffer_manager_.fetchPage(node_id));
+
+    bool underflow = page->isLeafPage()
+        ? static_cast<LeafPage*>(page)->isUnderflow()
+        : static_cast<InternalPage*>(page)->isUnderflow();
+
+    // path holds this node's ancestors only (see findLeaf), so an empty
+    // path means node_id is the root. The root is allowed to be underfull;
+    // it only collapses when an internal root is left with a single child.
+    if (path.empty()) {
+        if (!page->isLeafPage()) {
+            auto* root = static_cast<InternalPage*>(page);
+            if (root->children().size() == 1) {
+                root_page_id_ = root->children()[0];
+            }
+        }
+        return;
+    }
+
+    if (!underflow) {
+        return;
+    }
+
+    PageId parent_id = path.back();
+    auto* parent =
+        static_cast<InternalPage*>(buffer_manager_.fetchPage(parent_id));
+
+    auto& children = parent->children();
+    int idx = -1;
+    for (std::size_t i = 0; i < children.size(); ++i) {
+        if (children[i] == node_id) {
+            idx = static_cast<int>(i);
+            break;
+        }
+    }
+    assert(idx >= 0);
+
+    bool has_left = idx > 0;
+    PageId sibling_id = has_left ? children[idx - 1] : children[idx + 1];
+    bool sibling_is_left = has_left;
+    // keys()[separator_idx] is the key that sits between the left and right
+    // node of this pair, regardless of which side is "sibling" vs "node".
+    int separator_idx = sibling_is_left ? idx - 1 : idx;
+
+    auto* sibling_page =
+        static_cast<BPlusTreePage*>(buffer_manager_.fetchPage(sibling_id));
+
+    bool sibling_can_lend = page->isLeafPage()
+        ? static_cast<LeafPage*>(sibling_page)->canLend()
+        : static_cast<InternalPage*>(sibling_page)->canLend();
+
+    if (sibling_can_lend) {
+        Key new_separator = page->isLeafPage()
+            ? static_cast<LeafPage*>(page)->redistributeFrom(
+                  static_cast<LeafPage*>(sibling_page), sibling_is_left)
+            : static_cast<InternalPage*>(page)->redistributeFrom(
+                  static_cast<InternalPage*>(sibling_page),
+                  sibling_is_left,
+                  parent->keys()[separator_idx]);
+
+        parent->keys()[separator_idx] = new_separator;
+        return;
+    }
+
+    PageId left_id = sibling_is_left ? sibling_id : node_id;
+    PageId right_id = sibling_is_left ? node_id : sibling_id;
+    auto* left = buffer_manager_.fetchPage(left_id);
+    auto* right = buffer_manager_.fetchPage(right_id);
+
+    if (page->isLeafPage()) {
+        auto* left_leaf = static_cast<LeafPage*>(left);
+        auto* right_leaf = static_cast<LeafPage*>(right);
+        left_leaf->mergeFrom(right_leaf);
+        left_leaf->setNextPage(right_leaf->nextPage());
+    } else {
+        static_cast<InternalPage*>(left)->mergeFrom(
+            static_cast<InternalPage*>(right),
+            parent->keys()[separator_idx]);
+    }
+
+    // Removing the separator must also drop the pointer to right_id from
+    // parent->children() -- confirm InternalPage::removeAt does both.
+    parent->removeAt(separator_idx);
+
+    path.pop_back();
+    fixUnderflow(path, parent_id);
 }
 
 PageId BPlusTree::findLeaf(
@@ -155,42 +257,4 @@ void BPlusTree::splitLeaf(
     std::vector<PageId>& path
 ) {
     // TODO: implement leaf splitting
-}
-
-bool BPlusTree::remove(int32_t key){
-    if(empty()) return false;
-
-    std::vector<page_id_t> path = FindPathToLeaf(key);
-    page_id_t leaf_id = path.back();
-    LeafPage* leaf = fetchLeaf(leaf_id);
-
-    int idx = leaf->findKeyIndex(key);
-    if(idx < 0) return false;
-    leaf->removeAt(idx);
-
-    fixUnderFlow(path, leaf_id);
-    return true;
-}
-
-void BPlusTree::fixUnderflow(std::vector<page_id_t>& path, page_id_t node_id){
-    if(node_id == root_page_id_){
-        collapseRootNodeIfNeeded();
-        return;
-    }
-
-    BPlusTreePage* node = fetchPage(node_id);
-    if(!node->isUnderflow()) return;
-
-    page_id_t parent_id = path[parentIndexOf(path, node_id)];
-    InternalPage* parent = fetchInternal(parent_id);
-    auto[sibling_id, sibling_is_left, separator_idx] = parent->findSiblingOf(node_id);
-    BPlusTreePage* sibling = fetchPage(sibling_id);
-
-    if(sibling->canLendEntry()){
-        node->redistributeFrom(sibling, sibling_is_left);
-        parent->updateSeparatorKey(separator_idx,);
-    } else{
-        mergeSiblings(parent, node, sibling, sibling_is_left, separator_idx);
-        fixUnderflow(path, parent_id);
-    }
 }

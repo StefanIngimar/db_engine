@@ -34,9 +34,11 @@ public:
 
     bool isUnderflow() const;
 
-    uint32_t redistributeFrom(InternalPage* sibling, bool sibling_is_left, uint32_t parent_separator_key);
+    bool canLend() const;
 
-    void mergeFrom(InternalPage* sibling);
+    Key redistributeFrom(InternalPage* sibling, bool sibling_is_left, uint32_t parent_separator_key);
+
+    void mergeFrom(InternalPage* sibling, Key parent_separator_key);
 
 private:
     static constexpr std::size_t MAX_KEYS = 4;
