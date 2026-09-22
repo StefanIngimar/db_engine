@@ -1,3 +1,5 @@
+enable_testing()
+
 include_directories(${CMAKE_SOURCE_DIR}/src)
 
 add_executable(b_plus_tree_test
@@ -8,3 +10,5 @@ add_executable(b_plus_tree_test
     src/storage/buffer_manager.cpp
 )
 target_link_libraries(b_plus_tree_test gtest gtest_main pthread)
+
+add_test(NAME b_plus_tree_test COMMAND b_plus_tree_test)
