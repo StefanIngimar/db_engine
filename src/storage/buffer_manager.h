@@ -23,6 +23,27 @@ public:
         bool dirty
     );
 
+    void advanceClock();
+
+    void allocateFrame();
+
+    void readPage(
+        PageId page_id,
+        bool dirty
+    );
+
+    PageId allocatePage(
+        PageId page_id,
+        bool dirty
+    );
+
+    void disposePage(
+        PageId page_id,
+        bool dirty
+    );
+
+    void flushFile();
+
 private:
     DiskManager& disk_manager_;
 
