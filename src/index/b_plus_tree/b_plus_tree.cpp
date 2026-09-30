@@ -260,9 +260,8 @@ void BPlusTree::splitLeaf(
     // leaf currently holds MAX_ENTRIES + 1 records -- isFull() only fires
     // after the insert that pushed it one over the limit.
     auto new_leaf_owner = std::make_unique<LeafPage>(0);
+    LeafPage* new_leaf = new_leaf_owner.get();
     PageId new_leaf_id = buffer_manager_.newPage(std::move(new_leaf_owner));
-    auto* new_leaf =
-        static_cast<LeafPage*>(buffer_manager_.fetchPage(new_leaf_id));
 
     auto& left_records = leaf.records();
     auto& right_records = new_leaf->records();
@@ -286,8 +285,11 @@ void BPlusTree::splitLeaf(
     // key >= this value routes to the new leaf (see InternalPage::findChild).
     Key separator_key = right_records.front().key;
 
+    // Every field of new_leaf we need has now been written; done with it.
+    buffer_manager_.unpinPage(new_leaf_id, true);
+
     if (path.empty()) {
-        // leaf was the root it needs a new parent.
+        // leaf was the root -- it needs a new parent.
         createNewRoot(leaf_id, new_leaf_id, separator_key);
         return;
     }
@@ -302,6 +304,8 @@ void BPlusTree::splitLeaf(
         path.pop_back();
         splitInternal(parent_id, *parent, path);
     }
+
+    buffer_manager_.unpinPage(parent_id, true);
 }
 
 void BPlusTree::createNewRoot(

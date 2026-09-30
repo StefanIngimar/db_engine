@@ -10,6 +10,14 @@ add_executable(b_plus_tree_test
     src/storage/buffer_manager.cpp
     src/storage/disk_manager.cpp
 )
+add_executable(db_demo
+    src/main.cpp
+    src/index/b_plus_tree/b_plus_tree.cpp
+    src/index/b_plus_tree/internal_page.cpp
+    src/index/b_plus_tree/leaf_page.cpp
+    src/storage/buffer_manager.cpp
+    src/storage/disk_manager.cpp
+)
 target_link_libraries(b_plus_tree_test gtest gtest_main pthread)
 
 add_test(NAME b_plus_tree_test COMMAND b_plus_tree_test)
