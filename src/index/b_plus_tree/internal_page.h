@@ -40,6 +40,10 @@ public:
 
     void mergeFrom(InternalPage* sibling, Key parent_separator_key);
 
+protected:
+    void serializePayload(uint8_t* buffer) const override;
+    void deserializePayload(const uint8_t* buffer) override;
+
 private:
     static constexpr std::size_t MAX_KEYS = 4;
 

@@ -45,6 +45,10 @@ public:
 
     void mergeFrom(LeafPage* sibling);
 
+protected:
+    void serializePayload(uint8_t* buffer) const override;
+    void deserializePayload(const uint8_t* buffer) override;
+
 private:
     static constexpr std::size_t MAX_ENTRIES = 4;
 

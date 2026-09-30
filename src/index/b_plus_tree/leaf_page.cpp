@@ -1,6 +1,8 @@
 #include "leaf_page.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
 
 LeafPage::LeafPage(PageId id)
     : BPlusTreePage(id, BPlusTreePageType::LEAF) {
@@ -113,6 +115,45 @@ void LeafPage::mergeFrom(LeafPage* sibling) {
     auto& sibling_records = sibling->records();
     records_.insert(records_.end(), sibling_records.begin(), sibling_records.end());
     sibling_records.clear();
+}
+
+void LeafPage::serializePayload(uint8_t *buffer) const{
+    std::size_t offset = 0;
+    std::memcpy(buffer + offset, &next_page_id_, sizeof(PageId));
+    offset += sizeof(PageId);
+
+    uint32_t count = static_cast<uint32_t>(records_.size());
+    std::memcpy(buffer + offset, &count, sizeof(count));
+    offset += sizeof(count);
+
+    for(const Record& record: records_){
+        std::memcpy(buffer + offset, &record.key, sizeof(Key));
+        offset += sizeof(Key);
+        std::memcpy(buffer + offset, &record.value, sizeof(Value));
+        offset+= sizeof(Value);
+    }
+}
+
+void LeafPage::deserializePayload(const uint8_t* buffer){
+    std::size_t offset = 0;
+
+    std::memcpy(&next_page_id_, buffer + offset, sizeof(PageId));
+    offset += sizeof(PageId);
+
+    uint32_t count = 0;
+    std::memcpy(&count, buffer + offset, sizeof(count));
+    offset += sizeof(count);
+
+    records_.clear();
+    records_.reserve(count);
+    for(uint32_t i = 0; i < count; ++i){
+        Record record{};
+        std::memcpy(&record.key, buffer + offset, sizeof(Key));
+        offset += sizeof(Key);
+        std::memcpy(&record.value, buffer + offset, sizeof(Value));
+        offset += sizeof(Value);
+        records_.push_back(record);
+    }
 }
 
 size_t LeafPage::size() const {

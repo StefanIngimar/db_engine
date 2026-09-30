@@ -3,6 +3,7 @@
 #include "disk_manager.h"
 #include "page.h"
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -66,7 +67,9 @@ FrameId BufferManager::allocateFrame() {
     Frame& frame = frames_[*victim];
 
     if (frame.dirty) {
-        // TODO: disk_manager_.writePage(frame.page_id, *frame.page);
+        std::vector<uint8_t> buffer(PAGE_SIZE, 0);
+        frame.page->serializeTo(buffer.data());
+        disk_manager_.writePage(frame.page_id, buffer.data());
     }
 
     page_table_.erase(frame.page_id);
@@ -167,7 +170,9 @@ void BufferManager::disposePage(PageId page_id) {
 void BufferManager::flushPage() {
     for (Frame& frame : frames_) {
         if (frame.in_use && frame.dirty) {
-            // TODO: disk_manager_.writePage(frame.page_id, *frame.page);
+            std::vector<uint8_t> buffer(PAGE_SIZE, 0);
+            frame.page->serializeTo(buffer.data());
+            disk_manager_.writePage(frame.page_id, buffer.data());
             frame.dirty = false;
         }
     }

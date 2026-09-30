@@ -1,6 +1,7 @@
 #include "internal_page.h"
 
 #include <algorithm>
+#include <cstring>
 
 InternalPage::InternalPage(PageId id)
     : BPlusTreePage(
@@ -71,18 +72,21 @@ void InternalPage::removeAt(int index){
     children_.erase(children_.begin()+index+1);
 }
 
-Key InternalPage::redistributeFrom(InternalPage *sibling, bool sibling_is_left, Key parent_separator_key){
+Key InternalPage::redistributeFrom(InternalPage* sibling, bool sibling_is_left, Key parent_separator_key) {
+
     auto& sibling_keys = sibling->keys();
     auto& sibling_children = sibling->children();
 
-    if(sibling_is_left){
+    if (sibling_is_left) {
         PageId borrowed_child = sibling_children.back();
-        Key borowed_key = sibling_keys.back();
+        Key borrowed_key = sibling_keys.back();
+
         sibling_children.pop_back();
         sibling_keys.pop_back();
 
-        keys_.insert(keys_.begin(), borrowed_child);
-        return borowed_key;
+        keys_.insert(keys_.begin(), parent_separator_key);
+        children_.insert(children_.begin(), borrowed_child);
+        return borrowed_key;
     }
 
     PageId borrowed_child = sibling_children.front();
@@ -104,6 +108,58 @@ void InternalPage::mergeFrom(InternalPage *sibling, Key parent_separator_key){
 
     sibling->keys().clear();
     sibling->children().clear();
+}
+
+void InternalPage::serializePayload(uint8_t* buffer) const {
+    std::size_t offset = 0;
+
+    uint32_t key_count = static_cast<uint32_t>(keys_.size());
+    std::memcpy(buffer + offset, &key_count, sizeof(key_count));
+    offset += sizeof(key_count);
+
+    for (Key key : keys_) {
+        std::memcpy(buffer + offset, &key, sizeof(Key));
+        offset += sizeof(Key);
+    }
+
+    uint32_t child_count = static_cast<uint32_t>(children_.size());
+    std::memcpy(buffer + offset, &child_count, sizeof(child_count));
+    offset += sizeof(child_count);
+
+    for (PageId child : children_) {
+        std::memcpy(buffer + offset, &child, sizeof(PageId));
+        offset += sizeof(PageId);
+    }
+}
+
+void InternalPage::deserializePayload(const uint8_t* buffer) {
+    std::size_t offset = 0;
+
+    uint32_t key_count = 0;
+    std::memcpy(&key_count, buffer + offset, sizeof(key_count));
+    offset += sizeof(key_count);
+
+    keys_.clear();
+    keys_.reserve(key_count);
+    for (uint32_t i = 0; i < key_count; ++i) {
+        Key key = 0;
+        std::memcpy(&key, buffer + offset, sizeof(Key));
+        offset += sizeof(Key);
+        keys_.push_back(key);
+    }
+
+    uint32_t child_count = 0;
+    std::memcpy(&child_count, buffer + offset, sizeof(child_count));
+    offset += sizeof(child_count);
+
+    children_.clear();
+    children_.reserve(child_count);
+    for (uint32_t i = 0; i < child_count; ++i) {
+        PageId child = 0;
+        std::memcpy(&child, buffer + offset, sizeof(PageId));
+        offset += sizeof(PageId);
+        children_.push_back(child);
+    }
 }
 
 size_t InternalPage::size() const {
