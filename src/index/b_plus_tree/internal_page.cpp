@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <assert.h>
 
 InternalPage::InternalPage(PageId id)
     : BPlusTreePage(
@@ -22,6 +23,9 @@ PageId InternalPage::findChild(Key key) const {
         static_cast<size_t>(
             it - keys_.begin()
         );
+
+    assert(children_.size() == keys_.size()+1);
+    assert(index < children_.size());
 
     return children_[index];
 }

@@ -5,6 +5,7 @@
 #include "leaf_page.h"
 
 #include <cassert>
+#include <iostream>
 
 BPlusTree::BPlusTree(
     BufferManager& buffer_manager
@@ -21,50 +22,27 @@ bool BPlusTree::insert(
     Value value
 ) {
 
-    // Tree doesn't have a root yet.
-    if (root_page_id_ == INVALID_PAGE_ID) {
-
-        auto root =
-            std::make_unique<LeafPage>(0);
-
-        root->setRootPage(true);
-
-        PageId root_id =
-            buffer_manager_.newPage(
-                std::move(root)
-            );
-
-        root_page_id_ = root_id;
-
-        auto* root_page =
-            static_cast<LeafPage*>(
-                buffer_manager_.fetchPage(root_id)
-            );
-
-        return root_page->insert(key, value);
-    }
-
     std::vector<PageId> path;
 
     PageId leaf_id =
         findLeaf(key, path);
 
-    Page* page =
-        buffer_manager_.fetchPage(leaf_id);
-
     auto* leaf =
-        static_cast<LeafPage*>(page);
+        static_cast<LeafPage*>(buffer_manager_.fetchPage(leaf_id));
 
     bool inserted =
         leaf->insert(key, value);
 
     if (!inserted) {
+        buffer_manager_.unpinPage(leaf_id, false);
         return false;
     }
 
     if (leaf->isFull()) {
         splitLeaf(leaf_id, *leaf, path);
     }
+
+    buffer_manager_.unpinPage(leaf_id, true);
 
     return true;
 }
@@ -226,19 +204,25 @@ PageId BPlusTree::findLeaf(
     Key key,
     std::vector<PageId>& path
 ) {
-
-    PageId current =
-        root_page_id_;
+    PageId current = root_page_id_;
 
     while (true) {
 
         Page* page =
             buffer_manager_.fetchPage(current);
 
+        if (page == nullptr) {
+            throw std::runtime_error(
+                "findLeaf: failed to fetch page " +
+                std::to_string(current)
+            );
+        }
+
         auto* btree_page =
             static_cast<BPlusTreePage*>(page);
 
         if (btree_page->isLeafPage()) {
+            buffer_manager_.unpinPage(current, false);
             return current;
         }
 
@@ -247,8 +231,12 @@ PageId BPlusTree::findLeaf(
         auto* internal =
             static_cast<InternalPage*>(page);
 
-        current =
+        PageId next =
             internal->findChild(key);
+
+        buffer_manager_.unpinPage(current, false);
+
+        current = next;
     }
 }
 
@@ -300,6 +288,8 @@ void BPlusTree::splitLeaf(
 
     parent->insertChild(separator_key, new_leaf_id);
 
+    assert(parent->children().size() == parent->keys().size()+1);
+
     if (parent->isFull()) {
         path.pop_back();
         splitInternal(parent_id, *parent, path);
@@ -335,48 +325,90 @@ void BPlusTree::splitInternal(
     InternalPage& internal,
     std::vector<PageId>& path
 ) {
-    // internal currently holds MAX_KEYS + 1 keys / MAX_KEYS + 2 children --
-    // isFull() only fires right after the insertChild that overflowed it.
     auto& keys = internal.keys();
     auto& children = internal.children();
 
-    std::size_t mid = keys.size() / 2;
-    Key promoted_key = keys[mid];
+    const std::size_t mid = keys.size() / 2;
+    const Key promoted_key = keys[mid];
 
     auto new_internal_owner = std::make_unique<InternalPage>(0);
-    PageId new_internal_id = buffer_manager_.newPage(std::move(new_internal_owner));
-    auto* new_internal =
-        static_cast<InternalPage*>(buffer_manager_.fetchPage(new_internal_id));
+    PageId new_internal_id =
+        buffer_manager_.newPage(std::move(new_internal_owner));
 
-    // Everything right of the promoted key goes to the new node.
+    auto* new_internal =
+        static_cast<InternalPage*>(
+            buffer_manager_.fetchPage(new_internal_id)
+        );
+
+    if (new_internal == nullptr) {
+        std::cerr << "ERROR: failed to fetch new internal page\n";
+        std::abort();
+    }
+
+    // Move keys to the right of promoted_key.
     new_internal->keys().assign(
-        keys.begin() + static_cast<long>(mid) + 1,
+        keys.begin() + mid + 1,
         keys.end()
     );
+
+    // Move corresponding children.
     new_internal->children().assign(
-        children.begin() + static_cast<long>(mid) + 1,
+        children.begin() + mid + 1,
         children.end()
     );
 
-    // The promoted key moves up it isn't copied, so it's dropped from
-    // both sides here.
-    keys.erase(keys.begin() + static_cast<long>(mid), keys.end());
-    children.erase(children.begin() + static_cast<long>(mid) + 1, children.end());
+    // Keep left side, removing promoted key.
+    keys.erase(
+        keys.begin() + mid,
+        keys.end()
+    );
+
+    children.erase(
+        children.begin() + mid + 1,
+        children.end()
+    );
 
     if (path.empty()) {
-        // internal was the root it needs a new parent.
-        createNewRoot(internal_id, new_internal_id, promoted_key);
+        createNewRoot(
+            internal_id,
+            new_internal_id,
+            promoted_key
+        );
+
+        buffer_manager_.unpinPage(new_internal_id, true);
+        buffer_manager_.unpinPage(internal_id, true);
         return;
     }
 
     PageId parent_id = path.back();
-    auto* parent =
-        static_cast<InternalPage*>(buffer_manager_.fetchPage(parent_id));
+    path.pop_back();
 
-    parent->insertChild(promoted_key, new_internal_id);
+    auto* parent =
+        static_cast<InternalPage*>(
+            buffer_manager_.fetchPage(parent_id)
+        );
+
+    if (parent == nullptr) {
+        std::cerr << "ERROR: failed to fetch parent "
+                  << parent_id << "\n";
+        std::abort();
+    }
+
+    parent->insertChild(
+        promoted_key,
+        new_internal_id
+    );
+
+    assert(parent->children().size()==parent->keys().size()+1);
 
     if (parent->isFull()) {
-        path.pop_back();
-        splitInternal(parent_id, *parent, path);
+        splitInternal(
+            parent_id,
+            *parent,
+            path
+        );
     }
+
+    buffer_manager_.unpinPage(new_internal_id, true);
+    buffer_manager_.unpinPage(parent_id, true);
 }
